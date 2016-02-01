@@ -3,10 +3,9 @@ require_relative '01_sql_object'
 
 module Searchable
   def where(params)
-    keys, values = params.keys, params.values
-    where_line = keys.map!{|k| "#{k} = ?"}.join(" AND ")
+    where_line = params.keys.map{|k| "#{k} = ?"}.join(" AND ")
 
-    result = DBConnection.instance.execute(<<-SQL, *values)
+    results = DBConnection.instance.execute(<<-SQL, *params.values)
       SELECT
         *
       FROM
@@ -14,7 +13,7 @@ module Searchable
       WHERE
          #{where_line}
     SQL
-    result.map{|obj| self.new(obj)}
+    parse_all(results)
   end
 end
 
