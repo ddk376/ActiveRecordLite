@@ -1,0 +1,302 @@
+Metaprogramming and reflection
+
+Reflection(introspection): the ability for a program to examine itself
+obj = Object.new
+obj.methods # Object#methods returns an array of symbols, each the name of a method that can be sent to the object
+This is helpful for debugging
+
+call a method by name:
+[].send(:count) => 0
+
+uses of send
+def do_three_times(object, method_name)
+  3.times {object.send(method_name)}
+end
+
+class Dog
+  def bark
+    puts "Woof!"
+  end
+end
+
+dog = Dog.new
+do_three_times(dog, :bark)
+
+We can even define methods dynamically with define_method
+
+class Dog
+  def self.makes_sound(name)
+    define_method(name){ puts "#{name}"}
+  end
+
+  makes_sound(:woof)
+  makes_sound(:bark)
+  makes_sound(:grr)
+
+end
+
+dog = Dog.new
+dog.woof
+dog.bark
+dog.grr
+
+- code inside Dog class is executed at time Ruby defines the Dog class. make_sound
+is called at class definition time, not each time a new Dog object is created
+- makes_sound sets up an instance method to be shared by all Dog objects. It's not instance-specific
+-Inside the definition of the Dog class, makes_sound knows to call the class method because self == Dog
+- In the makes_sound macro, self == Dog because this is a Dog class method. define_method is implicitly calledn
+on Dog, adding a new method named name. The block is code to run when the method is later called on an instance od Dog
+
+
+macros:
+attr_accessor: defines getter/setter methods given an instance variable name
+belongs_to/has_many: defines a method to perform a SQL query to fetch associated object
+
+method_missing
+when a method is called on an object, Ruby first looks for an existing method with that name.
+If no such method exists, then it calls the Object#method_missing method. It passes the method name as a
+symbol and any arguments to #method_missing
+
+The default version simply raises an exception about the missing method, but you may override #mthod_missing for
+your own purposes:
+
+class T
+  def method_missing(*args)
+    p args
+  end
+end
+
+T.new.adfasfa(:a,:b,:c)
+[:adfasfa, :a, :b, :c]
+
+class Cat
+  def say(anything)
+    puts anything
+  end
+
+  def method_missing(method_name)
+    method_name = method_name.to_s
+    if method_name.start_with?("say_")
+      text = method_name[("say_".length)..-1]
+
+      say(text)
+    else
+      # do the usual thing when a method is missing (i.e., raise an error)
+      super
+    end
+  end
+end
+
+earl = Cat.new
+earl.say_hello # puts "hello"
+earl.say_goodbye # puts "goodbye"
+
+Using method_missing, we are able to "define" an infinite number of methods; we allow the user to call any
+method prefixed say_ on a Cat. This is very powerful; it isn't possible to do this using
+define_method itself
+
+However, overriding method_missing ca result in difficult to understand/debug to code,
+and should not be your first resort when attempting metaprogramming. Only it you want this infinite
+expressibility should you use method_missing; prefer a macro if the user just wants to define a small set of methods
+
+dynamic finders
+Rails has a way of finding objects through method_missing:
+
+User.find_by_first_name_and_last_name("Ned", "Ruggeri")
+User.find_by_username_and_state("rugerri", "California")
+
+Rather than create a method for every single possible way to search (which is almost infinite),
+Rails overrides the #method_missing method and for find_by* methods, it then parses the method
+name and figures out how it should perform the Searchable
+
+class User
+  def method_missing(method_name, *args)
+    method_name = method_name.to_s
+    if method_name.start_with?("find_by_")
+      # attribute_string is e.g., "first_name_and_last_name"
+      attributes_string = method_name[("find_by_".length)..-1]
+
+      #attribute_names is, e.g ["first_name", "last_name"]
+      attributes_names = attributes_string.split("_and_")
+      unless attribute_names.length == args.length-1
+        raise "unexpected # of arguments"
+      end
+
+      search_conditions = {}
+      attribute_names.length.times do |i|
+        search_conditions[attribute_names[i]] = args[i]
+      end
+
+      #Imagine search takes a hash of search conditions and finds objects with the given properties
+      self.search(search_conditions)
+    else
+      super
+    end
+  end
+end
+
+
+Type introspection
+"who am i".class" #=> String  # good to to use for debugging
+"who_am_i".is_a?(String) #=> true
+
+Object.is_a?(Object) #=> true
+
+Object.class #=> class
+
+Class.superclass #=> module
+Class.superclass.superclass #=> Object
+
+Classes are types of Module, which are Objects. In Ruby everything is an Object, even classes
+Object is of type class, which is a subclass of Object
+
+
+Methods with varying argument type_translation
+Say we have written a method perform_get that fetched a resource over the internet.
+As a convenience to the user, we'd like perform_get to take either a String, which is the literal URL to fetch,
+or a hash, with the URL broken into parts
+
+perform_get("http://www.google.com/+")
+perform_get(
+  :scheme => :http,
+  :host => "www.google.com",
+  :path => "/+"
+)
+
+def perform_get(url)
+  if url.is_a?(Hash)
+    url = make_url(url)
+  end
+
+  # ...
+end
+
+
+Class Instance Variables
+
+class Dog
+  def self.all   # classes are objects, too
+    @dogs ||= [] # fetch/assign an instance variable dogs. This stores an instance variable in the Dog
+                 # As part of the initialization of a Dog instance to the list of all Dogs. We can
+                 # access all dogs through Dog.all
+                 # when an instance variable is stored on a class, it is sometimes called
+                 # a class instance variable.
+  end
+
+  def initialize(name)
+    @name = name  # can set an instance variable of the current object
+
+    self.class.all << self
+  end
+
+  # could also use `attr_reader :name` to generate this
+  def name
+    @name
+  end
+end
+
+d1 = Dog.new("Fido")
+d2 = Dog.new("Fido 2.0")
+
+p Dog.all
+
+
+
+Inheritance @@
+For our purposes, the standard instance variable  will typically be enough. There is one downside:
+class instance varibales don't interact very nicely with inheritance
+
+class Corgi < Dog
+end
+
+Corgi.new("Linus") - Per the definition of initialize in Dog, we will run self.class.all << self
+self.class is Corgi; Corgi will have an all method by virtue of inheriting from Dog
+
+The all method will look in Corgi for a @dogs instance variable. Note that Corgi will not share
+the @dogs variable from Dog. Corgi and Dog are different objects, so they so not share instance
+variables. Corgi will have its own @dogs variable and Corgis will not be added to the Dogs array of @dogs
+
+Switch @dogs to @@dogs which is a class variable
+
+Class variables are shared between super-class and subclass
+
+class Dog
+  def self.all
+    @@dogs ||= []
+  end
+
+  def initialize(name)
+    @name = name
+
+    self.class.all << self
+  end
+end
+
+class Husky < Dog
+end
+
+h = Husky.new("Rex")
+
+Dog.all  # would contain the Husky
+
+Global variables
+Global variables are prefixed with a $. Global variables are top-level variables that live outside any class.
+They are accessible anywhere
+
+$all_dogs = []
+
+class Dog
+  def self.all
+    $all_dogs
+  end
+
+  def initialize(name)
+    @name = name
+    $all_dogs << self
+  end
+end
+
+all_dogs = [] # this is a local variable so it would have been cleaned up and removed when the source file is executed
+
+require './dog' #=> true
+Dog.all
+NameError: undefined local variable or method `all_dogs' for Dog:Class
+        from: /Users/ruggeri/test.rb:5:in `all'
+                from: (pry):2:in `__pry__'
+
+Avoid global variables
+- they are not very common to use
+- global variables live outside any class, they aren't very object oriented
+
+Data is normally stored in one of two places
+-inside an object
+-inside a local variable; the local variable lives as long as the current method call
+
+If you need to access an object inside a method, it is typical to pass the object into the method.
+If you need to return a result from a method, it is typical to use return to pass it back
+
+Exceptions: sometimes an object will be useful throughout your entire program, in which case
+you may want to make it globally accessible. One classic example is the $stdin and $stdout variables,
+which contain File objects
+
+def puts(*args)
+  $stdout.puts(*args)
+end
+
+def gets(*args)
+  $stdin.gets(*args)
+end
+
+This eliminates most of the need to use these variables explicitly. However, say you wanted to
+write your output differently depending on whether the user was reading your output in a terminal or dumping you
+output to a file.
+
+$ ruby program.rb # print to console
+$ ruby program.rb > ./file_to_print_to # print to a file
+You could use the IO#isatty method of $stdout to do this:
+
+if $stdout.isatty
+  puts "I'm on a console!"
+else
+  puts "I'm on a file!"
+end

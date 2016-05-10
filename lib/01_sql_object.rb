@@ -1,13 +1,11 @@
 require_relative 'db_connection'
 require 'active_support/inflector'
-# NB: the attr_accessor we wrote in phase 0 is NOT used in the rest
-# of this project. It was only a warm up.
 
 class SQLObject
   def self.columns
     return @columns if @columns
     results = DBConnection.instance.execute2("SELECT * FROM #{self.table_name}")
-    @columns=  results[0].map!(&:to_sym)
+    @columns = results.first.map!(&:to_sym)
   end
 
   def self.finalize!
@@ -23,7 +21,7 @@ class SQLObject
   end
 
   def self.table_name
-    @table_name || self.name.tableize
+    @table_name || self.name.underscore.pluralize
   end
 
   def self.all
@@ -36,8 +34,15 @@ class SQLObject
   end
 
   def self.find(id)
-    return nil if self.all.none?{|obj| obj.id == id}
-    result = self.all.find{|obj| obj.id == id}
+    results = DBConnection.execute(<<-SQL, id)
+      SELECT
+        #{table_name}
+      FROM
+        #{table_name}
+      WHERE
+        #{table_name}.id = ?
+    SQL
+    parse_all(results).first
   end
 
   def initialize(params = {})
