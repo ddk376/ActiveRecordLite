@@ -13,7 +13,7 @@ class AssocOptions
   end
 
   def table_name
-    model_class.table_name
+    model_class.table_nam
   end
 end
 
@@ -22,6 +22,7 @@ class BelongsToOptions < AssocOptions
     @foreign_key = options[:foreign_key] || (name.to_s + "_id").to_sym
     @class_name = options[:class_name] || name.to_s.camelcase
     @primary_key = options[:primary_key] || :id
+
   end
 end
 
