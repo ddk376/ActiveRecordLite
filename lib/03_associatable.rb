@@ -1,7 +1,6 @@
 require_relative '02_searchable'
 require 'active_support/inflector'
 
-# Phase IIIa
 class AssocOptions
   attr_accessor(
     :foreign_key,
@@ -38,7 +37,7 @@ module Associatable
   def belongs_to(name, options = {})
     self.assoc_options[name]= BelongsToOptions.new(name, options)
     define_method(name) do
-      options = self.class.assoc_options[name]
+      options = self.class.assoc_options[name]  # self.class is class of instance of obj
       f_key = self.send(options.foreign_key)
       options.model_class.where(options.primary_key => f_key).first
     end
@@ -55,7 +54,6 @@ module Associatable
 
   def assoc_options
     @assoc_hash ||= {}
-    @assoc_hash
   end
 end
 

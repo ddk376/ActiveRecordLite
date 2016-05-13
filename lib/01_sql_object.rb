@@ -4,7 +4,7 @@ require 'active_support/inflector'
 class SQLObject
   def self.columns
     return @columns if @columns
-    results = DBConnection.instance.execute2("SELECT * FROM #{self.table_name}")
+    results = DBConnection.execute2("SELECT * FROM #{self.table_name}")
     @columns = results.first.map!(&:to_sym)
   end
 
@@ -25,7 +25,7 @@ class SQLObject
   end
 
   def self.all
-    results = DBConnection.instance.execute("SELECT * FROM #{self.table_name}" )
+    results = DBConnection.execute("SELECT * FROM #{self.table_name}" )
     parse_all(results)
   end
 
@@ -34,15 +34,7 @@ class SQLObject
   end
 
   def self.find(id)
-    results = DBConnection.execute(<<-SQL, id)
-      SELECT
-        #{table_name}
-      FROM
-        #{table_name}
-      WHERE
-        #{table_name}.id = ?
-    SQL
-    parse_all(results).first
+    self.all.find {|obj| obj.id == id }
   end
 
   def initialize(params = {})
@@ -67,7 +59,7 @@ class SQLObject
     question_marks = []
     (self.class.columns.length-1).times { question_marks << "?"}
     question_marks = question_marks.join(",")
-    DBConnection.instance.execute(<<-SQL, *attribute_values.drop(1))
+    DBConnection.execute(<<-SQL, *attribute_values.drop(1))
       INSERT INTO
         #{self.class.table_name} (#{col_names})
       VALUES
@@ -81,7 +73,7 @@ class SQLObject
     set_phrase = self.class.columns.drop(1).map{|attr_name| attr_name.to_s + " = ?"}.join(',')
     attr_vals = attribute_values
     attr_vals.rotate!
-    DBConnection.instance.execute(<<-SQL, *attr_vals )
+    DBConnection.execute(<<-SQL, *attr_vals )
       UPDATE
         #{self.class.table_name}
       SET
@@ -92,10 +84,6 @@ class SQLObject
   end
 
   def save
-    if self.id != nil
-      self.update
-    else
-      self.insert
-    end
+     self.id.nil? ? self.insert : self.update
   end
 end
